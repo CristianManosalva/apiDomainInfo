@@ -1,0 +1,13 @@
+//Crear un single node cluster
+cockroach start-single-node \
+--insecure \
+--listen-addr=localhost:26257 \
+--http-addr=localhost:8080 \
+--background
+
+//Inicializa el node y correr script sql en la base de datos
+cockroach sql --insecure \
+--user=root \
+--host=localhost \
+--port=26257 \
+--database=postgres < sql/statements.sql

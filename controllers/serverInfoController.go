@@ -16,11 +16,15 @@ import (
 )
 
 //Server is the struct of a server
-type Server struct {
-	Address  string `json:"addres"`
-	SslGrade string `json:"ssl_grade"`
-	Country  string `json:"country"`
-	Owner    string `json:"owner"`
+// type Server struct {
+// 	Address  string `json:"addres"`
+// 	SslGrade string `json:"ssl_grade"`
+// 	Country  string `json:"country"`
+// 	Owner    string `json:"owner"`
+// }
+
+type state struct {
+	Status string 
 }
 
 //HostMain return server record
@@ -57,36 +61,54 @@ func HolaMundo(res http.ResponseWriter, req *http.Request){
 
 //GetServersRecord return record servers
 func GetServersRecord(res http.ResponseWriter, req *http.Request) {
+	enableCors(&res)
 	var recordServers HostMain
 	if canConnect() {
 		recordServers = getServersRecord()
 	}
-	json.NewEncoder(res).Encode(recordServers)
+	// json.NewEncoder(res).Encode(recordServers)
+	response, _ := json.Marshal(recordServers)
+	res.Header().Set("Content-Type", "application/json")
+	res.WriteHeader(202)
+	res.Write(response)
 }
 
 //ConsultDomain params a domain return server data || Validaciones pendientes, cambiar Fatalln por fmt.println
 func ConsultDomain(res http.ResponseWriter, req *http.Request) {
 	enableCors(&res)
 	ipAdd := chi.URLParam(req, "ipAddres")
-	resp, err := http.Get("https://api.ssllabs.com/api/v3/analyze?host=" + ipAdd) //Validar
+
+	if validhost(ipAdd) {
+		response, _ := json.Marshal(getDomainInfo(ipAdd))
+		res.Header().Set("Content-Type", "application/json")
+		res.WriteHeader(202)
+		res.Write(response)
+	} else {
+		response, _ := json.Marshal(map[string]string{"type": "Error", "message": "invalid host"})
+		res.Header().Set("Content-Type", "application/json")
+		res.WriteHeader(202)
+		res.Write(response)
+	}
+}
+
+func getDomainInfo (ipAdd string) Host {
+
+	resp, err := http.Get("https://api.ssllabs.com/api/v3/analyze?host=" + ipAdd)
 	if err != nil {
-		log.Println("err consult domain ", err)
+		log.Println("err consult domain getDomainInfo", err)
 	}
 	defer resp.Body.Close()
 
 	body, err := ioutil.ReadAll(resp.Body)
 	if err != nil {
-		log.Println("err read body ", err)
+		log.Println("err read body getDomainInfo", err)
 	}
 
 	var serverInfo Host
 	lessGrade := "A+"
 	json.Unmarshal(body, &serverInfo)
-	//serverInfo.Endpoints[0].Grade = "F" //Datos para pruebas
-	//serverInfo.Endpoints[1].Grade = "C"
-	//asignando pais, propietario y menor grado ssl
 	for i := 0; i < len(serverInfo.Endpoints); i++ {
-		p, o := getOwnerServer(serverInfo.Endpoints[i].IPAddress)
+		p, o := getOwnerServerApi(serverInfo.Endpoints[i].IPAddress)
 		serverInfo.Endpoints[i].Country = p
 		serverInfo.Endpoints[i].Owner = o
 		fmt.Println(lessGrade)
@@ -95,40 +117,78 @@ func ConsultDomain(res http.ResponseWriter, req *http.Request) {
 			serverInfo.SslGrade = lessGrade
 		}
 	}
-	//Obtenemos el logo y el titulo de la pagina, en caso de no obtenerse, se especifica
-	serverInfo.Title, serverInfo.Logo = getLogoAndTitle(ipAdd) //pasar un domino invalido para probar el manejo de errores
-	//Obtenemos el grado menor anterior, en caso de ser un nuevo registro, se retorna ""
+	serverInfo.Title, serverInfo.Logo = getLogoAndTitle(ipAdd)
 
+	
 	//---Base de Datos----
-/* 	if canConnect() {
+	if canConnect() {
+		//Obtenemos el grado menor anterior, en caso de ser un nuevo registro, se retorna ""
 		serverInfo.PreviousSslGrade = getSslGrade(ipAdd)
 
-		if !isDomainInDataBase(ipAdd) {
+		//Se consulta si el elemento ya esta guardado en la base de datos de ser asi, se actualiza, si no, se agrega
+		if !isDomainInDataBase(ipAdd) { 
 			saveDomainDataBase(ipAdd, serverInfo)
 		} else {
 			updateDomain(ipAdd, serverInfo)
 		}
-
-	} */
-	//---/Base de Datos----
-
-	if _, err := http.Get("https://" + ipAdd); err != nil {
-		log.Println("err get logo and title ", err)
-		serverInfo.IsDown = true
 	}
-	//fmt.Println("SI LLEGO AQUI")
-	// json.NewEncoder(res).Encode(serverInfo)
-	response, _ := json.Marshal(serverInfo)
-	res.Header().Set("Content-Type", "application/json")
-	res.WriteHeader(202)
-	res.Write(response)
+	//---/Base de Datos----
+	serverInfo.IsDown = !validhost(ipAdd)
+	return serverInfo
+}
+
+func validhost(ipAdd string) bool{
+	var state state
+	exitfor := false
+	for exitfor == false {
+		resp, err := http.Get("https://api.ssllabs.com/api/v3/analyze?host=" + ipAdd)
+		if err != nil {
+			log.Println("err consult domain function ValidHost", err)
+		}
+		defer resp.Body.Close()
+
+		body, err := ioutil.ReadAll(resp.Body)
+		if err != nil {
+			log.Println("err read body ValidHost", err)
+		}
+		json.Unmarshal(body, &state)
+		if state.Status != "DNS" {
+			break
+		}
+	}
+ 	return !(state.Status == "ERROR")
 }
 
 func enableCors(w *http.ResponseWriter) {
 	(*w).Header().Set("Access-Control-Allow-Origin", "*")
 }
 
-//revisar country con la otra libreria
+/*Esta funcion recibe la ip de cada endpoint y retorna su pais y la organizacion dueña de la ip
+La funcion utiliza la api de un tercero*/
+func getOwnerServerApi(ip string )(country, owner string) {
+	type getownercountry struct {
+		Country string
+		Org string
+	}
+	var ownerInfo getownercountry
+	resp, err := http.Get("http://free.ipwhois.io/json/" + ip)
+	if err != nil {
+		log.Println("err consult domain getOwnerServerApi", err)
+	}
+	defer resp.Body.Close()
+
+	body, err := ioutil.ReadAll(resp.Body)
+	if err != nil {
+		log.Println("err read body getOwnerServerApi", err)
+	}
+	json.Unmarshal(body, &ownerInfo)
+	owner = ownerInfo.Org
+	country = ownerInfo.Country
+	return
+}
+
+/*Esta funcion recibe la ip de cada endpoint y retorna su pais y la organizacion dueña de la ip
+La funcion utiliza la libreria whois*/
 func getOwnerServer(ip string) (country, owner string) {
 	result, err := whois.Whois(ip)
 	if err != nil {
@@ -169,6 +229,7 @@ func getNumberGrade(grade string) int {
 //Validaciones pendientes y codigo comentado por borrar
 func getLogoAndTitle(domain string) (title, logo string) {
 	resp, err := http.Get("https://" + domain) //Validar
+	fmt.Println("EL DOMINIO RECIBIDO FUE ", domain)
 	if err != nil {
 		log.Println("err get logo and title ", err)
 		return
@@ -225,7 +286,7 @@ func reverse(s string) string {
 }
 
 func canConnect() bool {
-	db, err := sql.Open("postgres", "postgresql://root@localhost:26257/testtech?sslmode=disable")
+	db, err := sql.Open("postgres", "postgresql://root@localhost:26257/postgres?sslmode=disable")
 	if err != nil {
 		log.Println("Fallo al conectar basedatos", err)
 		return false
@@ -241,10 +302,12 @@ func canConnect() bool {
 	return true
 }
 
+//cockroach sql --user=root --host=localhost --port=26257 --database=postgres < sql/statements.sql
+
 func getServersRecord() HostMain {
 	var recordHost HostMain
 
-	db, err := sql.Open("postgres", "postgresql://root@localhost:26257/testtech?sslmode=disable")
+	db, err := sql.Open("postgres", "postgresql://root@localhost:26257/postgres?sslmode=disable")
 	if err != nil {
 		log.Println("Fallo al conectar basedatos gSR", err)
 	}
@@ -276,7 +339,7 @@ func getServersRecord() HostMain {
 
 func getEndpoint(domain string) []endpointsInfo {
 	var endPs []endpointsInfo
-	db, err := sql.Open("postgres", "postgresql://root@localhost:26257/testtech?sslmode=disable")
+	db, err := sql.Open("postgres", "postgresql://root@localhost:26257/postgres?sslmode=disable")
 	if err != nil {
 		log.Println("Fallo al conectar basedatos gSR", err)
 	}
@@ -307,7 +370,7 @@ func getEndpoint(domain string) []endpointsInfo {
 
 func updateDomain(domain string, domainInfo Host) {
 	//conexion a la base de datos
-	db, err := sql.Open("postgres", "postgresql://root@localhost:26257/testtech?sslmode=disable")
+	db, err := sql.Open("postgres", "postgresql://root@localhost:26257/postgres?sslmode=disable")
 	if err != nil {
 		log.Println("Fallo al conectar basedatos uD", err)
 	}
@@ -341,7 +404,7 @@ func updateDomain(domain string, domainInfo Host) {
 
 func saveDomainDataBase(domain string, domainInfo Host) {
 	//conexion a la base de datos
-	db, err := sql.Open("postgres", "postgresql://root@localhost:26257/testtech?sslmode=disable")
+	db, err := sql.Open("postgres", "postgresql://root@localhost:26257/postgres?sslmode=disable")
 	if err != nil {
 		log.Println("Fallo al conectar basedatos sDB", err)
 	}
@@ -375,7 +438,7 @@ func saveDomainDataBase(domain string, domainInfo Host) {
 }
 
 func isDomainInDataBase(domain string) bool {
-	db, err := sql.Open("postgres", "postgresql://root@localhost:26257/testtech?sslmode=disable")
+	db, err := sql.Open("postgres", "postgresql://root@localhost:26257/postgres?sslmode=disable")
 	if err != nil {
 		log.Println("Fallo al conectar basedatos iDIDB", err)
 	}
@@ -397,7 +460,8 @@ func isDomainInDataBase(domain string) bool {
 }
 
 func getSslGrade(domain string) (sslGrade string) {
-	db, err := sql.Open("postgres", "postgresql://root@localhost:26257/testtech?sslmode=disable")
+	// db, err := sql.Open("postgres", "postgresql://root@localhost:26257/testtech?sslmode=disable")
+	db, err := sql.Open("postgres", "postgresql://root@localhost:26257/postgres?sslmode=disable")
 	if err != nil {
 		log.Println("Fallo al conectar basedatos gSG", err)
 	}

@@ -25,5 +25,5 @@ func main() {
 	fmt.Println("Server run on port 3000")
 	log.Fatal(http.ListenAndServe(":3000", router))
 	fmt.Println("Exit server")
-	routes.GetDomainURL()
+	// routes.GetDomainURL()
 }
