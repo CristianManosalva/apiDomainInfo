@@ -18,6 +18,8 @@ func Server() *chi.Mux {
 	router := chi.NewRouter()
 	// router.Get("/getServers", controllers.GetServers)
 	router.Get("/getServerInfo/{ipAddres}", controllers.ConsultDomain)
+	router.Get("/validDomain/{ipAddres}", controllers.ValidDomain)
+	router.Get("/ConsultDomainSslGrade/{ipAddres}", controllers.ConsultDomainSslGrade)
 	router.Get("/getServersRecord", controllers.GetServersRecord)
 	router.Get("/holamundo", controllers.HolaMundo)
 	return router

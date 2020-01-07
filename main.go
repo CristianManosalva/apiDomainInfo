@@ -6,7 +6,7 @@ import (
 	"github.com/go-chi/chi/middleware"
 	"log"
 	"net/http"
-	// "testTech/src/routes"
+	"os"
 	"apiDomainInfo/routes"
 )
 
@@ -22,8 +22,10 @@ func Routes() *chi.Mux {
 
 func main() {
 	router := Routes()
-	fmt.Println("Server run on port 3000")
-	log.Fatal(http.ListenAndServe(":3000", router))
+	vars := os.Environ()
+	fmt.Println("las variables", vars)
+	fmt.Println("Server run on port",os.Getenv("PORT"))
+	log.Fatal(http.ListenAndServe(":"+ os.Getenv("PORT") , router))
 	fmt.Println("Exit server")
 	// routes.GetDomainURL()
 }

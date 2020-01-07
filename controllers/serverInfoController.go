@@ -4,6 +4,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
+	// "time"
 	"io/ioutil"
 	"log"
 	"net/http"
@@ -14,14 +15,6 @@ import (
 	_ "github.com/lib/pq"
 	"github.com/likexian/whois-go"
 )
-
-//Server is the struct of a server
-// type Server struct {
-// 	Address  string `json:"addres"`
-// 	SslGrade string `json:"ssl_grade"`
-// 	Country  string `json:"country"`
-// 	Owner    string `json:"owner"`
-// }
 
 type state struct {
 	Status string 
@@ -46,6 +39,20 @@ type Host struct {
 	Logo             string
 	Title            string
 	IsDown           bool
+}
+
+//Esta estructura es solamente para obtener los grados Ssl
+type HostSslGrade struct {
+	Endpoints        []endpointsSslGrade
+	SslGrade         string
+	Status           string
+}
+
+//Esta estructura es solamente para obtener los grados Ssl
+type endpointsSslGrade struct {
+	IPAddress string
+	Grade     string
+	Progress  string
 }
 
 type endpointsInfo struct {
@@ -91,6 +98,43 @@ func ConsultDomain(res http.ResponseWriter, req *http.Request) {
 	}
 }
 
+func ConsultDomainSslGrade(res http.ResponseWriter, req *http.Request) {
+	enableCors(&res)
+	ipAdd := chi.URLParam(req, "ipAddres")
+
+	if validhost(ipAdd) {
+		response, _ := json.Marshal(getDomainSslGrade(ipAdd))
+		res.Header().Set("Content-Type", "application/json")
+		res.WriteHeader(202)
+		res.Write(response)
+	} else {
+		response, _ := json.Marshal(map[string]string{"type": "Error", "message": "invalid host"})
+		res.Header().Set("Content-Type", "application/json")
+		res.WriteHeader(202)
+		res.Write(response)
+	}
+}
+
+func ValidDomain(res http.ResponseWriter, req *http.Request) {
+	enableCors(&res)
+	ipAdd := chi.URLParam(req, "ipAddres")
+	// fmt.Println("Durmiendo")
+	// time.Sleep(10 * time.Second)
+	// fmt.Println("Despierto")
+
+	if validhost(ipAdd) {
+		response, _ := json.Marshal(map[string]string{"type": "Success", "message": "valid host"})
+		res.Header().Set("Content-Type", "application/json")
+		res.WriteHeader(202)
+		res.Write(response)
+	} else {
+		response, _ := json.Marshal(map[string]string{"type": "Error", "message": "invalid host"})
+		res.Header().Set("Content-Type", "application/json")
+		res.WriteHeader(202)
+		res.Write(response)
+	}
+}
+
 func getDomainInfo (ipAdd string) Host {
 
 	resp, err := http.Get("https://api.ssllabs.com/api/v3/analyze?host=" + ipAdd)
@@ -112,7 +156,7 @@ func getDomainInfo (ipAdd string) Host {
 		serverInfo.Endpoints[i].Country = p
 		serverInfo.Endpoints[i].Owner = o
 		fmt.Println(lessGrade)
-		if getNumberGrade(serverInfo.Endpoints[i].Grade) < getNumberGrade(lessGrade) {
+		if getNumberGrade(serverInfo.Endpoints[i].Grade) <= getNumberGrade(lessGrade) {
 			lessGrade = serverInfo.Endpoints[i].Grade
 			serverInfo.SslGrade = lessGrade
 		}
@@ -134,6 +178,45 @@ func getDomainInfo (ipAdd string) Host {
 	}
 	//---/Base de Datos----
 	serverInfo.IsDown = !validhost(ipAdd)
+	return serverInfo
+}
+
+func getDomainSslGrade(ipAdd string) HostSslGrade {
+	resp, err := http.Get("https://api.ssllabs.com/api/v3/analyze?host=" + ipAdd)
+	if err != nil {
+		log.Println("err consult domain getSslGrade", err)
+	}
+	defer resp.Body.Close()
+
+	body, err := ioutil.ReadAll(resp.Body)
+	if err != nil {
+		log.Println("err read body getSslGrade", err)
+	}
+
+	var serverInfo HostSslGrade
+	lessGrade := "A+"
+	json.Unmarshal(body, &serverInfo)
+	for i := 0; i < len(serverInfo.Endpoints); i++ {
+		fmt.Println(lessGrade)
+		if getNumberGrade(serverInfo.Endpoints[i].Grade) <= getNumberGrade(lessGrade) {
+			lessGrade = serverInfo.Endpoints[i].Grade
+			serverInfo.SslGrade = lessGrade
+		}
+	}
+	
+	//---Base de Datos----
+	/*if canConnect() {
+		//Obtenemos el grado menor anterior, en caso de ser un nuevo registro, se retorna ""
+		serverInfo.PreviousSslGrade = getSslGrade(ipAdd)
+
+		//Se consulta si el elemento ya esta guardado en la base de datos de ser asi, se actualiza, si no, se agrega
+		if !isDomainInDataBase(ipAdd) { 
+			saveDomainDataBase(ipAdd, serverInfo)
+		} else {
+			updateDomain(ipAdd, serverInfo)
+		}
+	}*/
+	//---/Base de Datos----
 	return serverInfo
 }
 
