@@ -22,8 +22,6 @@ func Routes() *chi.Mux {
 
 func main() {
 	router := Routes()
-	vars := os.Environ()
-	fmt.Println("las variables", vars)
 	fmt.Println("Server run on port",os.Getenv("PORT"))
 	log.Fatal(http.ListenAndServe(":"+ os.Getenv("PORT") , router))
 	fmt.Println("Exit server")

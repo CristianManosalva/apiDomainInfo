@@ -83,7 +83,7 @@ func GetServersRecord(res http.ResponseWriter, req *http.Request) {
 //ConsultDomain params a domain return server data || Validaciones pendientes, cambiar Fatalln por fmt.println
 func ConsultDomain(res http.ResponseWriter, req *http.Request) {
 	enableCors(&res)
-	ipAdd := chi.URLParam(req, "ipAddres")
+	ipAdd := strings.ToLower(chi.URLParam(req, "ipAddres"))
 
 	if validhost(ipAdd) {
 		response, _ := json.Marshal(getDomainInfo(ipAdd))
@@ -100,7 +100,7 @@ func ConsultDomain(res http.ResponseWriter, req *http.Request) {
 
 func ConsultDomainSslGrade(res http.ResponseWriter, req *http.Request) {
 	enableCors(&res)
-	ipAdd := chi.URLParam(req, "ipAddres")
+	ipAdd := strings.ToLower(chi.URLParam(req, "ipAddres"))
 
 	if validhost(ipAdd) {
 		response, _ := json.Marshal(getDomainSslGrade(ipAdd))
@@ -117,7 +117,7 @@ func ConsultDomainSslGrade(res http.ResponseWriter, req *http.Request) {
 
 func ValidDomain(res http.ResponseWriter, req *http.Request) {
 	enableCors(&res)
-	ipAdd := chi.URLParam(req, "ipAddres")
+	ipAdd := strings.ToLower(chi.URLParam(req, "ipAddres"))
 	// fmt.Println("Durmiendo")
 	// time.Sleep(10 * time.Second)
 	// fmt.Println("Despierto")
@@ -202,6 +202,10 @@ func getDomainSslGrade(ipAdd string) HostSslGrade {
 			lessGrade = serverInfo.Endpoints[i].Grade
 			serverInfo.SslGrade = lessGrade
 		}
+	}
+
+	if(serverInfo.SslGrade != "") {
+		updateSslGradeDataBase(ipAdd, serverInfo)
 	}
 	
 	//---Base de Datos----
@@ -483,6 +487,39 @@ func updateDomain(domain string, domainInfo Host) {
 		}
 	}
 
+}
+
+func updateSslGradeDataBase(domain string, domainInfo HostSslGrade) {
+	//conexion a la base de datos
+	db, err := sql.Open("postgres", "postgresql://root@localhost:26257/postgres?sslmode=disable")
+	if err != nil {
+		log.Println("Fallo al conectar basedatos uD", err)
+	}
+	defer db.Close()
+
+	//create prepare statement to update table domain_info
+	stmtInsertDomainInfo, err := db.Prepare(`UPDATE domain_info SET ssl_grade = $1 WHERE domain = $2;`)
+	if err != nil {
+		log.Println("Err create prepare statement to update domain_info ", err)
+	}
+	defer stmtInsertDomainInfo.Close()
+
+	stmtInsertServerInfo, err := db.Prepare(`UPDATE servers_info SET ssl_grade = $1 WHERE address = $2;`)
+	if err != nil {
+		log.Println("Err create prepare statement to update servers_info ", err)
+	}
+	defer stmtInsertServerInfo.Close()
+
+	if _, err := stmtInsertDomainInfo.Exec(domainInfo.SslGrade,domain); err != nil {
+		log.Println("Err update data domain_info ", err)
+	}
+
+	//update servers info on database
+	for _, value := range domainInfo.Endpoints {
+		if _, err := stmtInsertServerInfo.Exec(value.Grade, value.IPAddress); err != nil {
+			log.Println("Err update data servers_info ", err)
+		}
+	}
 }
 
 func saveDomainDataBase(domain string, domainInfo Host) {
