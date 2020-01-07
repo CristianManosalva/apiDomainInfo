@@ -16,7 +16,7 @@ PORT=500 go run main.go
 
 **API Endpoint:** `getServerInfo`
 
->Retorna la informacion asociada a el domino que se especifique en el parametro
+>Retorna la informacion asociada a el domino que se especifique en el parametro en un objeto json. La aplicacion retorna la informacion que se obtiene en un solo llamado, puede no estar completa, si se hacen llamados posteriormente, la aplicacion ira refrescando la informacion
 
 Parametros:
 
